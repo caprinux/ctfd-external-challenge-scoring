@@ -241,7 +241,7 @@ In the CTFd admin panel:
 
 The challenge value is forced to `0`. This is intentional.
 
-The external challenge URL is stored in CTFd's `connection_info` field and is used as the launch redirect target.
+The external challenge URL is stored in CTFd's `connection_info` field and is used as the launch redirect target. It must be an absolute `http://` or `https://` URL.
 
 ---
 
@@ -404,10 +404,10 @@ Fields:
 | --- | --- | --- |
 | `user_id` | yes | CTFd user who caused the submission. |
 | `team_id` | yes | Team receiving the score. The plugin verifies the user is on this team. |
-| `points` | yes | Non-negative integer score. |
+| `points` | yes | Non-negative integer score, maximum `2147483647`. |
 | `idempotency_key` | yes | Unique external attempt/run ID. Prevents duplicate processing. Max 128 chars. |
-| `provided` | no | Human-readable submission/result summary. |
-| `details` | no | JSON metadata for the score event. |
+| `provided` | no | Human-readable submission/result summary. Max 4096 characters. |
+| `details` | no | JSON metadata for the score event. Max encoded size 65535 bytes. |
 
 Success response:
 

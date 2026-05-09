@@ -1,4 +1,5 @@
 import datetime
+import json
 import os
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -9,12 +10,16 @@ from sqlalchemy.exc import IntegrityError
 from CTFd.cache import clear_challenges, clear_standings
 from CTFd.models import Awards, Challenges, Solves, Teams, Users, db
 from CTFd.plugins import register_plugin_assets_directory
+from CTFd.exceptions.challenges import (
+    ChallengeCreateException,
+    ChallengeUpdateException,
+)
 from CTFd.plugins.challenges import CHALLENGE_CLASSES, BaseChallenge
 from CTFd.plugins.migrations import upgrade
 from CTFd.utils import get_config
 from CTFd.utils.config import is_teams_mode
 from CTFd.utils.dates import ctf_paused, ctftime, isoformat
-from CTFd.utils.decorators import admins_only, authed_only
+from CTFd.utils.decorators import admins_only, authed_only, require_verified_emails
 from CTFd.utils.security.signing import (
     BadSignature,
     SignatureExpired,
@@ -30,6 +35,9 @@ from .models import ExternalScoringLaunch
 CHALLENGE_TYPE = "external_scored"
 LAUNCH_TOKEN_MAX_AGE = 300
 IDEMPOTENCY_KEY_MAX_LENGTH = 128
+MAX_POINTS = 2147483647
+MAX_PROVIDED_LENGTH = 4096
+MAX_DETAILS_JSON_LENGTH = 65535
 
 external_scoring = Blueprint("external_scoring", __name__)
 external_scoring_api = Blueprint(
@@ -59,6 +67,12 @@ class ExternalScoredChallengeType(BaseChallenge):
         data["type"] = cls.id
         data["value"] = 0
         data["function"] = "static"
+        external_url = (data.get("connection_info") or "").strip()
+        if _valid_external_url(external_url) is False:
+            raise ChallengeCreateException(
+                "External Challenge URL must be an absolute http(s) URL"
+            )
+        data["connection_info"] = external_url
 
         challenge = cls.challenge_model(**data)
         db.session.add(challenge)
@@ -70,6 +84,12 @@ class ExternalScoredChallengeType(BaseChallenge):
         data = dict(req.form or req.get_json() or {})
         data["value"] = 0
         data["function"] = "static"
+        external_url = (data.get("connection_info") or "").strip()
+        if _valid_external_url(external_url) is False:
+            raise ChallengeUpdateException(
+                "External Challenge URL must be an absolute http(s) URL"
+            )
+        data["connection_info"] = external_url
 
         for attr, value in data.items():
             if attr == "type":
@@ -116,6 +136,18 @@ def _json_error(message, status=400, field=""):
     else:
         errors = {field: [message]}
     return {"success": False, "errors": errors}, status
+
+
+def _valid_external_url(url):
+    if not isinstance(url, str) or not url:
+        return False
+    if any(ch.isspace() for ch in url):
+        return False
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
 def _now():
@@ -284,7 +316,23 @@ def _parse_points(data):
     points = _parse_required_int(data, "points")
     if points < 0:
         raise ValueError("points must be a non-negative integer")
+    if points > MAX_POINTS:
+        raise ValueError(f"points must be less than or equal to {MAX_POINTS}")
     return points
+
+
+def _validate_details(details):
+    if details is None:
+        return None
+    try:
+        encoded = json.dumps(details, separators=(",", ":"))
+    except (TypeError, ValueError) as e:
+        raise ValueError("details must be JSON serializable") from e
+    if len(encoded.encode("utf-8")) > MAX_DETAILS_JSON_LENGTH:
+        raise ValueError(
+            f"details JSON must be at most {MAX_DETAILS_JSON_LENGTH} bytes"
+        )
+    return details
 
 
 def _get_or_create_score_record(challenge_id, team_id):
@@ -371,6 +419,7 @@ def get_team_external_score_events(challenge_id):
 
 
 @external_scoring.route("/external-scoring/launch/<int:challenge_id>")
+@require_verified_emails
 @authed_only
 def launch(challenge_id):
     user = get_current_user()
@@ -379,8 +428,8 @@ def launch(challenge_id):
     _ensure_launch_allowed_or_abort(challenge, user, team)
 
     external_url = (challenge.connection_info or "").strip()
-    if not external_url:
-        abort(500, description="External challenge URL is not configured")
+    if _valid_external_url(external_url) is False:
+        abort(500, description="External challenge URL is not configured correctly")
 
     token = _create_launch_token(user=user, team=team, challenge=challenge)
     return redirect(_append_launch_token(external_url, token))
@@ -529,7 +578,16 @@ def submit_score(challenge_id):
     provided = data.get("provided")
     if provided is not None:
         provided = str(provided)
-    details = data.get("details")
+        if len(provided) > MAX_PROVIDED_LENGTH:
+            return _json_error(
+                f"provided must be at most {MAX_PROVIDED_LENGTH} characters",
+                400,
+                "provided",
+            )
+    try:
+        details = _validate_details(data.get("details"))
+    except ValueError as e:
+        return _json_error(str(e), 400, "details")
 
     score = _get_or_create_score_record(challenge.id, team.id)
     previous_best = int(score.best_points or 0)
@@ -546,7 +604,7 @@ def submit_score(challenge_id):
             award = Awards(
                 user_id=user.id,
                 team_id=team.id,
-                name=f"{challenge.name} score improvement",
+                name=f"External score: {challenge.name}"[:80],
                 description=(
                     f"External score for {challenge.name}: "
                     f"{previous_best} -> {new_best} (+{delta_awarded})"
@@ -624,9 +682,17 @@ def get_my_score(challenge_id):
     if team is None:
         return _json_error("You must be on a team", 403)
 
+    user = get_current_user()
     challenge = Challenges.query.filter_by(id=challenge_id).first()
     if challenge is None or challenge.type != CHALLENGE_TYPE:
         return _json_error("challenge does not exist", 404, "challenge_id")
+    reason = _challenge_closed_reason(challenge)
+    if reason == "Challenge is hidden":
+        return _json_error("challenge does not exist", 404, "challenge_id")
+    if reason:
+        return _json_error(reason, 403)
+    if _user_has_prerequisites(user, challenge) is False:
+        return _json_error("Challenge prerequisites are not satisfied", 403)
 
     score, events = _load_score_history(challenge.id, team.id)
     return {
