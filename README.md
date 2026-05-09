@@ -36,6 +36,34 @@ Tested behavior includes:
 
 ---
 
+## Screenshots
+
+### Admin: create an external scored challenge
+
+The plugin adds an `external_scored` challenge type. The challenge value is forced to `0`, and admins configure the external challenge URL that CTFd will redirect players to.
+
+![Admin create external scored challenge](docs/screenshots/admin-create-external-scored.png)
+
+### Admin: update an external scored challenge
+
+The update form keeps the challenge value fixed at `0` and exposes the external challenge URL as the key plugin-specific field.
+
+![Admin update external scored challenge](docs/screenshots/admin-update-external-scored.png)
+
+### Player: challenge board
+
+The challenge card still shows the global CTFd value, which is `0` for this challenge type. Team-specific best score is shown inside the challenge popup/window.
+
+![Player challenge board](docs/screenshots/player-challenge-board.png)
+
+### Player: launch link, best score, and score history
+
+Inside the challenge popup/window, players see their team's current best score, a launch link, and all past team submissions including whether each submission awarded additional points.
+
+![Player challenge modal with score history](docs/screenshots/player-challenge-modal-history.png)
+
+---
+
 ## Why this plugin exists
 
 CTFd's normal scoring model stores challenge points on the challenge itself:
@@ -109,6 +137,8 @@ This repository is itself the CTFd plugin directory. The important files are:
 ├── models.py
 ├── DESIGN.md
 ├── README.md
+├── docs/
+│   └── screenshots/
 ├── assets/
 │   ├── create.html
 │   ├── create.js
