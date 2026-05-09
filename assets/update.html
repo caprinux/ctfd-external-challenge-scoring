@@ -1,0 +1,48 @@
+{% extends "admin/challenges/update.html" %}
+
+{% block header %}
+<div class="alert alert-secondary" role="alert">
+  This is an external scored challenge. Its CTFd challenge value is forced to 0. Variable team points are awarded through the external scoring API.
+</div>
+{% endblock %}
+
+{% block connection_info %}
+<div class="form-group">
+  <label>
+    External Challenge URL<br>
+    <small class="form-text text-muted">
+      Users will be redirected to this URL with a short-lived <code>ctfd_launch_token</code> query parameter.
+    </small>
+  </label>
+  <input type="url" class="form-control chal-connection-info" name="connection_info" value="{{ challenge.connection_info | default('', true) }}" required>
+</div>
+{% endblock %}
+
+{% block value %}
+<div class="form-group">
+  <label>
+    Value<br>
+    <small class="form-text text-muted">
+      External scored challenges always have a base CTFd value of 0. Team points come from plugin-managed awards.
+    </small>
+  </label>
+  <input type="number" class="form-control chal-value" value="0" disabled>
+  <input type="hidden" name="value" value="0">
+</div>
+{% endblock %}
+
+{% block function %}
+<input type="hidden" name="function" value="static">
+{% endblock %}
+
+{% block initial %}{% endblock %}
+{% block decay %}{% endblock %}
+{% block minimum %}{% endblock %}
+
+{% block logic %}
+<input type="hidden" name="logic" value="any">
+{% endblock %}
+
+{% block max_attempts %}
+<input type="hidden" name="max_attempts" value="0">
+{% endblock %}

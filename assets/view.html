@@ -1,0 +1,65 @@
+{% extends "challenge.html" %}
+
+{% block description %}
+  {% set score = external_scoring_get_team_score(challenge.id) %}
+  {% set events = external_scoring_get_team_events(challenge.id) %}
+  {% set best_points = score.best_points if score else 0 %}
+
+  <div class="alert alert-info text-center" role="alert">
+    <strong>Your team best score:</strong> {{ best_points }} point{{ best_points | pluralize }}
+  </div>
+
+  {{ challenge.html }}
+
+  {% if events %}
+    <hr>
+    <h5>Past Team Submissions</h5>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>User</th>
+            <th>Submitted</th>
+            <th>Previous Best</th>
+            <th>New Best</th>
+            <th>Awarded</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in events %}
+            <tr>
+              <td><small>{{ event.created }}</small></td>
+              <td>{{ event.user.name if event.user else "Unknown" }}</td>
+              <td>{{ event.points }}</td>
+              <td>{{ event.previous_best }}</td>
+              <td>{{ event.new_best }}</td>
+              <td>+{{ event.delta_awarded }}</td>
+            </tr>
+            {% if event.provided %}
+              <tr>
+                <td></td>
+                <td colspan="5"><small class="text-muted">{{ event.provided }}</small></td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block input %}
+  <input id="challenge-id" class="challenge-id" type="hidden" value="{{ challenge.id }}">
+  {% if authed() and get_current_team_attrs() %}
+    <a id="external-scoring-launch" class="btn btn-primary w-100" href="{{ url_for('external_scoring.launch', challenge_id=challenge.id) }}">
+      Launch External Challenge
+    </a>
+  {% else %}
+    <div class="alert alert-warning mb-0" role="alert">
+      You must be logged in and on a team to launch this challenge.
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block submit %}{% endblock %}

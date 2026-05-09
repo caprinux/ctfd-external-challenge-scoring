@@ -1,0 +1,26 @@
+# Local CTFd clone used for development/testing
+/CTFd/
+
+# Audit/reference material not part of plugin distribution
+/audit/
+
+# Docker/runtime data
+.data/
+*.sqlite
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Editors/OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
